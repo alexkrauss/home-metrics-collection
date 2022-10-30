@@ -1,0 +1,72 @@
+version: "3"
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.39.1
+    volumes:
+      - prometheus_data:/prometheus
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    command: |
+      --config.file=/etc/prometheus/prometheus.yml
+      --storage.tsdb.path=/prometheus
+      --web.enable-lifecycle
+      --web.console.libraries=/etc/prometheus/console_libraries
+      --web.console.templates=/etc/prometheus/consoles
+      --web.route-prefix=/prometheus
+      --storage.tsdb.retention=700d
+    logging: # in case service logs excessively, we make sure that it does not eat all disk space
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # Collects general host metrics and exposes them to prometheus.
+  node-exporter:
+    image: prom/node-exporter:v1.4.0
+    pid: "host"
+    ports:
+      - "9100:9100"
+    volumes:
+      - /:/host:ro,rslave
+    command:
+      # To collect proper file system metrics, the host root must be mounted in the container.
+      - "--path.rootfs=/host"
+
+  libsml-prometheus-exporter:
+    build: ./libsml-prometheus-exporter
+    privileged: true
+    volumes:
+      - "/dev/ttyUSB0:/dev/ttyUSB0"
+    command: |
+      -b '0.0.0.0:8080'
+      -p 'stromzaehler_'
+      -m '1-0:1.8.0*255=zaehlerstand'
+      -m '1-0:16.7.0*255=momentanleistung'
+
+  grafana:
+    image: grafana/grafana:9.2.2
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana:z
+      - ./grafana/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/grafana.ini:/etc/grafana/grafana.ini
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_SERVER_ROOT_URL: '%(protocol)s://%(domain)s:%(http_port)s/grafana/'
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+
+    logging: # in case service logs excessively, we make sure that it does not eat all disk space
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+volumes:
+  prometheus_data:
+  grafana_data:
